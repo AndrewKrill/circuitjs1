@@ -387,6 +387,7 @@ pindiode.txt PIN Diode
 pindiodeiv.txt I/V Curve
 pindiode-rfswitch.txt RF Switch
 pindiode-attenuator.txt Variable Attenuator
+pindiode-recovery.txt Reverse Recovery Demo
 -
 +Memristors
 mr.txt Memristor
