@@ -57,6 +57,7 @@ class PINDiodeElm extends DiodeElm {
     public PINDiodeElm(int xx, int yy) {
         super(xx, yy);
         modelName = lastPINModelName;
+        lastCapacitance = junctionCapacitance; // Initialize for rate limiting
         setup();
     }
     
@@ -74,6 +75,7 @@ class PINDiodeElm extends DiodeElm {
             capvoltdiff = new Double(st.nextToken()).doubleValue();
         } catch (Exception e) {
         }
+        lastCapacitance = junctionCapacitance; // Initialize for rate limiting
         setup();
     }
     
@@ -142,6 +144,7 @@ class PINDiodeElm extends DiodeElm {
     static final double THERMAL_VOLTAGE_AT_300K = 0.026; // kT/q at 27°C (300.15K) in volts
     static final double MAX_CAPACITANCE = 1e-6; // Maximum capacitance to avoid numerical issues (1μF)
     static final double MIN_STORED_CHARGE = 1e-15; // Minimum charge threshold for display (1 femtocoulomb)
+    static final double MIN_COMPANION_RESISTANCE = 0.01; // Minimum companion resistance for numerical stability (0.01Ω)
     
     void getInfo(String arr[]) {
         arr[0] = "PIN diode";
@@ -303,9 +306,8 @@ class PINDiodeElm extends DiodeElm {
         compResistance = sim.timeStep / (2 * capacitance);
         
         // Add minimum resistance to prevent numerical issues with very large capacitances
-        double minResistance = 0.01; // 0.01 ohm minimum
-        if (compResistance < minResistance)
-            compResistance = minResistance;
+        if (compResistance < MIN_COMPANION_RESISTANCE)
+            compResistance = MIN_COMPANION_RESISTANCE;
         
         voltSourceValue = -capvoltdiff - capCurrent * compResistance;
     }
