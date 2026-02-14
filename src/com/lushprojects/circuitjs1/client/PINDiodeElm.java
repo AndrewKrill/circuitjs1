@@ -123,6 +123,11 @@ class PINDiodeElm extends DiodeElm {
     // Display threshold for RF resistance (ohms)
     static final double MAX_DISPLAYABLE_RF_RESISTANCE = 1e6;
     
+    // Physical constants
+    static final double THERMAL_VOLTAGE_AT_300K = 0.026; // kT/q at 27°C (300.15K) in volts
+    static final double MAX_CAPACITANCE = 1e-6; // Maximum capacitance to avoid numerical issues (1μF)
+    static final double MIN_STORED_CHARGE = 1e-15; // Minimum charge threshold for display (1 femtocoulomb)
+    
     void getInfo(String arr[]) {
         arr[0] = "PIN diode";
         arr[1] = "I = " + getCurrentText(getCurrent());
@@ -138,7 +143,7 @@ class PINDiodeElm extends DiodeElm {
         if (rfResistance > 0 && rfResistance < MAX_DISPLAYABLE_RF_RESISTANCE)
             arr[8] = "RF resistance ≈ " + getUnitText(rfResistance, Locale.ohmString);
         // Show stored charge during reverse recovery
-        if (Math.abs(storedCharge) > 1e-15)
+        if (Math.abs(storedCharge) > MIN_STORED_CHARGE)
             arr[9] = "Stored charge = " + getUnitText(Math.abs(storedCharge), "C");
     }
     
@@ -235,15 +240,15 @@ class PINDiodeElm extends DiodeElm {
         } else {
             // Forward bias: add diffusion capacitance due to stored charge
             // Diffusion capacitance is proportional to carrier lifetime and current
-            double diffusionCap = carrierLifetime * Math.abs(getCurrent()) / (0.026); // thermal voltage
+            double diffusionCap = carrierLifetime * Math.abs(getCurrent()) / THERMAL_VOLTAGE_AT_300K;
             capacitance = junctionCapacitance + diffusionCap;
         }
         
         // Limit capacitance to reasonable values
         if (capacitance < junctionCapacitance)
             capacitance = junctionCapacitance;
-        if (capacitance > 1e-6) // cap at 1uF to avoid numerical issues
-            capacitance = 1e-6;
+        if (capacitance > MAX_CAPACITANCE)
+            capacitance = MAX_CAPACITANCE;
         
         // Capacitor companion model using trapezoidal approximation
         compResistance = sim.timeStep / (2 * capacitance);
@@ -269,7 +274,7 @@ class PINDiodeElm extends DiodeElm {
             // Charge takes time to be swept out
             double chargeDecayRate = 1.0 / reverseRecoveryTime;
             storedCharge -= storedCharge * chargeDecayRate * sim.timeStep;
-            if (Math.abs(storedCharge) < 1e-15) {
+            if (Math.abs(storedCharge) < MIN_STORED_CHARGE) {
                 storedCharge = 0;
                 wasForwardBiased = false;
             }
