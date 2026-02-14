@@ -38,15 +38,16 @@ class PINDiodeElm extends DiodeElm {
     double carrierLifetime = 1e-6; // typical carrier lifetime in seconds (1 microsecond)
     double intrinsicWidth = 10e-6; // width of intrinsic region in meters (10 micrometers)
     double reverseRecoveryTime = 1e-6; // reverse recovery time in seconds (1 microsecond)
+    double junctionCapacitance = 1e-12; // junction capacitance in farads (1 picofarad)
     
     // Physical constants for capacitance calculation
     static final double EPSILON_0 = 8.854e-12; // Vacuum permittivity (F/m)
     static final double EPSILON_R_SI = 11.7; // Relative permittivity of silicon
-    static final double ASSUMED_AREA = 1e-8; // Assumed junction area (100 μm²) for capacitance calc
     
     // Capacitance model variables (similar to VaractorElm)
     double capacitance, capCurrent;
     double compResistance, capvoltdiff;
+    double lastCapacitance = 0; // previous capacitance for smooth transitions
     
     // Reverse recovery tracking and stored charge
     double storedCharge = 0; // stored charge in the intrinsic region
@@ -69,6 +70,7 @@ class PINDiodeElm extends DiodeElm {
             carrierLifetime = new Double(st.nextToken()).doubleValue();
             intrinsicWidth = new Double(st.nextToken()).doubleValue();
             reverseRecoveryTime = new Double(st.nextToken()).doubleValue();
+            junctionCapacitance = new Double(st.nextToken()).doubleValue();
             capvoltdiff = new Double(st.nextToken()).doubleValue();
         } catch (Exception e) {
         }
@@ -79,7 +81,7 @@ class PINDiodeElm extends DiodeElm {
     
     String dump() {
         return super.dump() + " " + carrierLifetime + " " + intrinsicWidth + " " + 
-               reverseRecoveryTime + " " + capvoltdiff;
+               reverseRecoveryTime + " " + junctionCapacitance + " " + capvoltdiff;
     }
     
     void reset() {
@@ -88,6 +90,7 @@ class PINDiodeElm extends DiodeElm {
         storedCharge = 0;
         lastCurrent = 0;
         wasForwardBiased = false;
+        lastCapacitance = junctionCapacitance;
     }
     
     final int hs = 8;
@@ -147,16 +150,17 @@ class PINDiodeElm extends DiodeElm {
         arr[3] = "P = " + getUnitText(getPower(), "W");
         arr[4] = "Carrier lifetime = " + getUnitText(carrierLifetime, "s");
         arr[5] = "Intrinsic width = " + getUnitText(intrinsicWidth, "m");
-        arr[6] = "Capacitance = " + getUnitText(capacitance, "F");
-        arr[7] = "Reverse recovery time = " + getUnitText(reverseRecoveryTime, "s");
+        arr[6] = "Junction capacitance = " + getUnitText(junctionCapacitance, "F");
+        arr[7] = "Total capacitance = " + getUnitText(capacitance, "F");
+        arr[8] = "Reverse recovery time = " + getUnitText(reverseRecoveryTime, "s");
         // Calculate and display RF resistance at current bias
         // Only show if reasonable value (filtering out very large resistances for clarity)
         double rfResistance = calculateRFResistance();
         if (rfResistance > 0 && rfResistance < MAX_DISPLAYABLE_RF_RESISTANCE)
-            arr[8] = "RF resistance ≈ " + getUnitText(rfResistance, Locale.ohmString);
+            arr[9] = "RF resistance ≈ " + getUnitText(rfResistance, Locale.ohmString);
         // Show stored charge during forward bias and reverse recovery
         if (Math.abs(storedCharge) > MIN_STORED_CHARGE)
-            arr[9] = "Stored charge = " + getUnitText(Math.abs(storedCharge), "C");
+            arr[10] = "Stored charge = " + getUnitText(Math.abs(storedCharge), "C");
     }
     
     // Calculate RF resistance based on DC bias current
@@ -192,12 +196,6 @@ class PINDiodeElm extends DiodeElm {
         return k * widthSquared / storedChargeCapacity;
     }
     
-    // Calculate geometry-based capacitance from physical dimensions
-    // C = ε₀ * ε_r * A / W
-    private double calculateGeometricCapacitance() {
-        return EPSILON_0 * EPSILON_R_SI * ASSUMED_AREA / intrinsicWidth;
-    }
-    
     public EditInfo getEditInfo(int n) {
         if (n == 0)
             return super.getEditInfo(0);
@@ -207,8 +205,10 @@ class PINDiodeElm extends DiodeElm {
             return new EditInfo("Intrinsic Width (m)", intrinsicWidth, 0, 0);
         if (n == 3)
             return new EditInfo("Reverse Recovery Time (s)", reverseRecoveryTime, 0, 0);
-        // n >= 4: map to super's n >= 1 (buttons)
-        return super.getEditInfo(n - 3);
+        if (n == 4)
+            return new EditInfo("Junction Capacitance (F)", junctionCapacitance, 0, 0);
+        // n >= 5: map to super's n >= 1 (buttons)
+        return super.getEditInfo(n - 4);
     }
     
     public void setEditValue(int n, EditInfo ei) {
@@ -231,8 +231,13 @@ class PINDiodeElm extends DiodeElm {
                 reverseRecoveryTime = ei.value;
             return;
         }
-        // n >= 4: map to super's n >= 1 (buttons)
-        super.setEditValue(n - 3, ei);
+        if (n == 4) {
+            if (ei.value > 0)
+                junctionCapacitance = ei.value;
+            return;
+        }
+        // n >= 5: map to super's n >= 1 (buttons)
+        super.setEditValue(n - 4, ei);
     }
     
     int getShortcut() { return 0; }
@@ -257,29 +262,51 @@ class PINDiodeElm extends DiodeElm {
         // Calculate capacitance based on bias state
         double voltdiff = volts[0] - volts[1];
         
+        // Target capacitance calculation
+        double targetCapacitance;
+        
         if (voltdiff < 0) {
-            // Reverse bias: Geometry-based capacitance (stable, voltage-independent)
-            // C = ε₀ * ε_r * A / W
+            // Reverse bias: Use junction capacitance (stable, voltage-independent)
             // This is the key characteristic of PIN diodes - stable reverse capacitance
-            capacitance = calculateGeometricCapacitance();
+            targetCapacitance = junctionCapacitance;
         } else {
-            // Forward bias: Geometry capacitance + diffusion capacitance from stored charge
+            // Forward bias: Junction capacitance + diffusion capacitance from stored charge
             // Diffusion capacitance: C_diff = τ * g_m = τ * (dI/dV) ≈ τ * I / (2*V_T)
             // Factor of 2 accounts for PIN diode charge storage being different from PN junction
-            double geomCapacitance = calculateGeometricCapacitance();
             double diffusionCap = carrierLifetime * Math.abs(getCurrent()) / (2 * THERMAL_VOLTAGE_AT_300K);
-            capacitance = geomCapacitance + diffusionCap;
+            targetCapacitance = junctionCapacitance + diffusionCap;
+        }
+        
+        // Apply rate limiting to smooth capacitance changes and prevent numerical instability
+        // This is crucial for stable forward-to-reverse transitions
+        if (lastCapacitance > 0) {
+            double maxChange = lastCapacitance * 0.5; // Limit change to 50% per iteration
+            double change = targetCapacitance - lastCapacitance;
+            if (Math.abs(change) > maxChange) {
+                change = (change > 0) ? maxChange : -maxChange;
+            }
+            capacitance = lastCapacitance + change;
+        } else {
+            capacitance = targetCapacitance;
         }
         
         // Limit capacitance to reasonable values for numerical stability
-        double minCap = calculateGeometricCapacitance();
-        if (capacitance < minCap)
-            capacitance = minCap;
+        if (capacitance < junctionCapacitance)
+            capacitance = junctionCapacitance;
         if (capacitance > MAX_CAPACITANCE)
             capacitance = MAX_CAPACITANCE;
         
+        // Store for next iteration
+        lastCapacitance = capacitance;
+        
         // Capacitor companion model using trapezoidal approximation
         compResistance = sim.timeStep / (2 * capacitance);
+        
+        // Add minimum resistance to prevent numerical issues with very large capacitances
+        double minResistance = 0.01; // 0.01 ohm minimum
+        if (compResistance < minResistance)
+            compResistance = minResistance;
+        
         voltSourceValue = -capvoltdiff - capCurrent * compResistance;
     }
     
