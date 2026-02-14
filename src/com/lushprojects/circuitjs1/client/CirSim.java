@@ -5928,7 +5928,6 @@ MouseOutHandler, MouseWheelHandler {
 	case 374: return new LDRElm(x1, y1, x2, y2, f, st);
     	case 400: return new DarlingtonElm(x1, y1, x2, y2, f, st);
     	case 401: return new ComparatorElm(x1, y1, x2, y2, f, st);
-    	case 402: return new PINDiodeElm(x1, y1, x2, y2, f, st);
     	case 402: return new OTAElm(x1, y1, x2, y2, f, st);
     	case 403: return new ScopeElm(x1, y1, x2, y2, f, st);
     	case 404: return new FuseElm(x1, y1, x2, y2, f, st);
@@ -5958,6 +5957,7 @@ MouseOutHandler, MouseWheelHandler {
     	case 428: return new MotorProtectionSwitchElm(x1, y1, x2, y2, f, st);
     	case 429: return new DPDTSwitchElm(x1, y1, x2, y2, f, st);
     	case 430: return new CrossSwitchElm(x1, y1, x2, y2, f, st);
+    	case 431: return new PINDiodeElm(x1, y1, x2, y2, f, st);
         }
     	return null;
     }

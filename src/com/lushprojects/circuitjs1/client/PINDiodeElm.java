@@ -49,7 +49,7 @@ class PINDiodeElm extends DiodeElm {
         setup();
     }
     
-    int getDumpType() { return 402; }
+    int getDumpType() { return 431; }
     
     String dump() {
         return super.dump() + " " + carrierLifetime + " " + intrinsicWidth;
@@ -129,29 +129,32 @@ class PINDiodeElm extends DiodeElm {
     
     public EditInfo getEditInfo(int n) {
         if (n == 0)
-            return super.getEditInfo(n);
+            return super.getEditInfo(0);
         if (n == 1)
             return new EditInfo("Carrier Lifetime (s)", carrierLifetime, 0, 0);
         if (n == 2)
             return new EditInfo("Intrinsic Width (m)", intrinsicWidth, 0, 0);
-        return super.getEditInfo(n+2);
+        // n >= 3: map to super's n >= 1 (buttons)
+        return super.getEditInfo(n - 2);
     }
     
     public void setEditValue(int n, EditInfo ei) {
         if (n == 0) {
-            super.setEditValue(n, ei);
+            super.setEditValue(0, ei);
             return;
         }
         if (n == 1) {
             if (ei.value > 0)
                 carrierLifetime = ei.value;
+            return;
         }
         if (n == 2) {
             if (ei.value > 0)
                 intrinsicWidth = ei.value;
+            return;
         }
-        if (n > 2)
-            super.setEditValue(n-2, ei);
+        // n >= 3: map to super's n >= 1 (buttons)
+        super.setEditValue(n - 2, ei);
     }
     
     int getShortcut() { return 0; }
