@@ -1178,6 +1178,7 @@ MouseOutHandler, MouseWheelHandler {
     	MenuBar activeMenuBar = new MenuBar(true);
     	activeMenuBar.addItem(getClassCheckItem(Locale.LS("Add Diode"), "DiodeElm"));
     	activeMenuBar.addItem(getClassCheckItem(Locale.LS("Add Zener Diode"), "ZenerElm"));
+    	activeMenuBar.addItem(getClassCheckItem(Locale.LS("Add PIN Diode"), "PINDiodeElm"));
     	activeMenuBar.addItem(getClassCheckItem(Locale.LS("Add Transistor (bipolar, NPN)"), "NTransistorElm"));
     	activeMenuBar.addItem(getClassCheckItem(Locale.LS("Add Transistor (bipolar, PNP)"), "PTransistorElm"));
     	activeMenuBar.addItem(getClassCheckItem(Locale.LS("Add MOSFET (N-Channel)"), "NMosfetElm"));
@@ -5927,6 +5928,7 @@ MouseOutHandler, MouseWheelHandler {
 	case 374: return new LDRElm(x1, y1, x2, y2, f, st);
     	case 400: return new DarlingtonElm(x1, y1, x2, y2, f, st);
     	case 401: return new ComparatorElm(x1, y1, x2, y2, f, st);
+    	case 402: return new PINDiodeElm(x1, y1, x2, y2, f, st);
     	case 402: return new OTAElm(x1, y1, x2, y2, f, st);
     	case 403: return new ScopeElm(x1, y1, x2, y2, f, st);
     	case 404: return new FuseElm(x1, y1, x2, y2, f, st);
@@ -6001,6 +6003,8 @@ MouseOutHandler, MouseWheelHandler {
     		return (CircuitElm) new DiodeElm(x1, y1);
     	if (n=="ZenerElm")
     		return (CircuitElm) new ZenerElm(x1, y1);
+    	if (n=="PINDiodeElm")
+    		return (CircuitElm) new PINDiodeElm(x1, y1);
     	if (n=="ACVoltageElm")
     		return (CircuitElm) new ACVoltageElm(x1, y1);
     	if (n=="ACRailElm")
