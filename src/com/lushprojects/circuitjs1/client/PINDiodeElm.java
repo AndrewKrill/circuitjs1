@@ -105,6 +105,7 @@ class PINDiodeElm extends DiodeElm {
         arr[4] = "Carrier lifetime = " + getUnitText(carrierLifetime, "s");
         arr[5] = "Intrinsic width = " + getUnitText(intrinsicWidth, "m");
         // Calculate and display RF resistance at current bias
+        // Only show if reasonable value (filtering out very large resistances for clarity)
         double rfResistance = calculateRFResistance();
         if (rfResistance > 0 && rfResistance < 1e6)
             arr[6] = "RF resistance ≈ " + getUnitText(rfResistance, Locale.ohmString);
@@ -123,7 +124,9 @@ class PINDiodeElm extends DiodeElm {
         // where τ is carrier lifetime, Q is charge stored
         // For simplicity, we use: R_RF ≈ k / I_DC
         // where k is proportional to carrier lifetime and intrinsic region properties
-        double k = carrierLifetime * intrinsicWidth * 1e6; // scaling factor
+        // The 1e6 scaling factor converts the resistance to a practical range in ohms
+        // based on typical PIN diode parameters (microseconds and micrometers)
+        double k = carrierLifetime * intrinsicWidth * 1e6; // scaling factor for practical ohm values
         return k / dcCurrent;
     }
     
