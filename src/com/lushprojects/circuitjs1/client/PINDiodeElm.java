@@ -97,6 +97,9 @@ class PINDiodeElm extends DiodeElm {
         drawPosts(g);
     }
     
+    // Display threshold for RF resistance (ohms)
+    static final double MAX_DISPLAYABLE_RF_RESISTANCE = 1e6;
+    
     void getInfo(String arr[]) {
         arr[0] = "PIN diode";
         arr[1] = "I = " + getCurrentText(getCurrent());
@@ -107,7 +110,7 @@ class PINDiodeElm extends DiodeElm {
         // Calculate and display RF resistance at current bias
         // Only show if reasonable value (filtering out very large resistances for clarity)
         double rfResistance = calculateRFResistance();
-        if (rfResistance > 0 && rfResistance < 1e6)
+        if (rfResistance > 0 && rfResistance < MAX_DISPLAYABLE_RF_RESISTANCE)
             arr[6] = "RF resistance ≈ " + getUnitText(rfResistance, Locale.ohmString);
     }
     
@@ -118,15 +121,15 @@ class PINDiodeElm extends DiodeElm {
     double calculateRFResistance() {
         double dcCurrent = Math.abs(getCurrent());
         if (dcCurrent < 1e-12)
-            return 1e6; // very high resistance at near-zero current
+            return MAX_DISPLAYABLE_RF_RESISTANCE; // very high resistance at near-zero current
         
-        // Simplified model: R_RF ≈ (k*T/q) * (τ/(Q*I_DC))
-        // where τ is carrier lifetime, Q is charge stored
-        // For simplicity, we use: R_RF ≈ k / I_DC
-        // where k is proportional to carrier lifetime and intrinsic region properties
-        // The 1e6 scaling factor converts the resistance to a practical range in ohms
-        // based on typical PIN diode parameters (microseconds and micrometers)
-        double k = carrierLifetime * intrinsicWidth * 1e6; // scaling factor for practical ohm values
+        // Simplified model: R_RF ≈ k / I_DC
+        // This is a practical approximation of the full model R_RF ≈ (k*T/q) * (τ/(W*I_DC))
+        // where k*T/q is thermal voltage, τ is carrier lifetime, W is width
+        // The thermal voltage (≈26mV at room temp) and other constants are absorbed
+        // into the scaling factor for simplicity, giving practical resistance values
+        // when typical parameters (microseconds, micrometers) are used
+        double k = carrierLifetime * intrinsicWidth * 1e6; // empirical scaling for practical ohm values
         return k / dcCurrent;
     }
     
