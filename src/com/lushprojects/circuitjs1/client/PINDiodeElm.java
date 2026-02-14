@@ -37,8 +37,12 @@ class PINDiodeElm extends DiodeElm {
     static String lastPINModelName = "default-pin";
     double carrierLifetime = 1e-6; // typical carrier lifetime in seconds (1 microsecond)
     double intrinsicWidth = 10e-6; // width of intrinsic region in meters (10 micrometers)
-    double reverseRecoveryTime = 1e-6; // reverse recovery time in seconds (1 microsecond)
     double junctionCapacitance = 1e-12; // junction capacitance in farads (1 picofarad)
+    
+    // Reverse recovery time factor: t_rr = factor * τ
+    // Typical values: 2-3 for PIN diodes (depends on forward/reverse current ratio)
+    // This allows user override while maintaining physical relationship
+    double reverseRecoveryFactor = 2.5; // dimensionless multiplier
     
     // Physical constants for capacitance calculation
     static final double EPSILON_0 = 8.854e-12; // Vacuum permittivity (F/m)
@@ -70,7 +74,15 @@ class PINDiodeElm extends DiodeElm {
         try {
             carrierLifetime = new Double(st.nextToken()).doubleValue();
             intrinsicWidth = new Double(st.nextToken()).doubleValue();
-            reverseRecoveryTime = new Double(st.nextToken()).doubleValue();
+            // For backward compatibility: read old reverseRecoveryTime as factor
+            double oldRecoveryTime = new Double(st.nextToken()).doubleValue();
+            // Calculate factor from old recovery time if it makes sense
+            if (oldRecoveryTime > 0 && carrierLifetime > 0) {
+                reverseRecoveryFactor = oldRecoveryTime / carrierLifetime;
+                // Clamp to reasonable range
+                if (reverseRecoveryFactor < 0.5) reverseRecoveryFactor = 0.5;
+                if (reverseRecoveryFactor > 10) reverseRecoveryFactor = 10;
+            }
             junctionCapacitance = new Double(st.nextToken()).doubleValue();
             capvoltdiff = new Double(st.nextToken()).doubleValue();
         } catch (Exception e) {
@@ -82,6 +94,8 @@ class PINDiodeElm extends DiodeElm {
     int getDumpType() { return 431; }
     
     String dump() {
+        // Save as reverseRecoveryTime for backward compatibility
+        double reverseRecoveryTime = reverseRecoveryFactor * carrierLifetime;
         return super.dump() + " " + carrierLifetime + " " + intrinsicWidth + " " + 
                reverseRecoveryTime + " " + junctionCapacitance + " " + capvoltdiff;
     }
@@ -155,7 +169,10 @@ class PINDiodeElm extends DiodeElm {
         arr[5] = "Intrinsic width = " + getUnitText(intrinsicWidth, "m");
         arr[6] = "Junction capacitance = " + getUnitText(junctionCapacitance, "F");
         arr[7] = "Total capacitance = " + getUnitText(capacitance, "F");
-        arr[8] = "Reverse recovery time = " + getUnitText(reverseRecoveryTime, "s");
+        // Calculate reverse recovery time from carrier lifetime
+        double reverseRecoveryTime = reverseRecoveryFactor * carrierLifetime;
+        arr[8] = "Reverse recovery time = " + getUnitText(reverseRecoveryTime, "s") + 
+                 " (" + String.format("%.1f", reverseRecoveryFactor) + "×τ)";
         // Calculate and display RF resistance at current bias
         // Only show if reasonable value (filtering out very large resistances for clarity)
         double rfResistance = calculateRFResistance();
@@ -207,7 +224,7 @@ class PINDiodeElm extends DiodeElm {
         if (n == 2)
             return new EditInfo("Intrinsic Width (m)", intrinsicWidth, 0, 0);
         if (n == 3)
-            return new EditInfo("Reverse Recovery Time (s)", reverseRecoveryTime, 0, 0);
+            return new EditInfo("Recovery Time Factor (×τ)", reverseRecoveryFactor, 0.5, 10);
         if (n == 4)
             return new EditInfo("Junction Capacitance (F)", junctionCapacitance, 0, 0);
         // n >= 5: map to super's n >= 1 (buttons)
@@ -230,8 +247,8 @@ class PINDiodeElm extends DiodeElm {
             return;
         }
         if (n == 3) {
-            if (ei.value > 0)
-                reverseRecoveryTime = ei.value;
+            if (ei.value >= 0.5 && ei.value <= 10)
+                reverseRecoveryFactor = ei.value;
             return;
         }
         if (n == 4) {
@@ -336,7 +353,9 @@ class PINDiodeElm extends DiodeElm {
             wasForwardBiased = true;
         } else if (wasForwardBiased && voltdiff < 0) {
             // Reverse bias after forward bias: simulate reverse recovery
-            // Charge sweeps out with time constant = reverseRecoveryTime
+            // Charge sweeps out with time constant = reverseRecoveryFactor * carrierLifetime
+            // This physically connects recovery time to carrier lifetime
+            double reverseRecoveryTime = reverseRecoveryFactor * carrierLifetime;
             double chargeDecayRate = 1.0 / reverseRecoveryTime;
             storedCharge -= storedCharge * chargeDecayRate * sim.timeStep;
             if (Math.abs(storedCharge) < MIN_STORED_CHARGE) {
@@ -345,6 +364,7 @@ class PINDiodeElm extends DiodeElm {
             }
         } else if (voltdiff >= 0 && currentCurrent <= 0) {
             // Forward biased but no forward current: charge recombines naturally
+            // This uses carrier lifetime directly - the fundamental time constant
             double recombinationRate = storedCharge / carrierLifetime;
             storedCharge -= recombinationRate * sim.timeStep;
             if (storedCharge < MIN_STORED_CHARGE) {
