@@ -22,20 +22,33 @@ package com.lushprojects.circuitjs1.client;
 import com.lushprojects.circuitjs1.client.util.Locale;
 
 // PIN diode implementation
-// At low frequencies, behaves like a standard diode
-// At high frequencies, acts as a variable resistor inversely proportional to DC bias current
+// 
+// Physical structure: P | I | N where I-region is thick (microns to hundreds of microns)
+// 
+// Key characteristics:
+// 1. Forward bias: Current-controlled resistor at RF (R_RF ∝ 1/I_DC)
+//    - Carriers flood the intrinsic region creating conductive plasma
+//    - RF signal rides on this plasma without modulating the junction
+// 2. Reverse bias: Geometry-based capacitor (C ≈ ε*A/W)
+//    - I-region fully depletes, capacitance is stable and voltage-independent
+//    - Much lower distortion than PN diodes
+// 3. Carrier lifetime (τ): Controls stored charge, RF resistance, and switching speed
 class PINDiodeElm extends DiodeElm {
     static String lastPINModelName = "default-pin";
     double carrierLifetime = 1e-6; // typical carrier lifetime in seconds (1 microsecond)
     double intrinsicWidth = 10e-6; // width of intrinsic region in meters (10 micrometers)
-    double junctionCapacitance = 1e-12; // junction capacitance in farads (1 picofarad)
     double reverseRecoveryTime = 1e-6; // reverse recovery time in seconds (1 microsecond)
+    
+    // Physical constants for capacitance calculation
+    static final double EPSILON_0 = 8.854e-12; // Vacuum permittivity (F/m)
+    static final double EPSILON_R_SI = 11.7; // Relative permittivity of silicon
+    static final double ASSUMED_AREA = 1e-8; // Assumed junction area (100 μm²) for capacitance calc
     
     // Capacitance model variables (similar to VaractorElm)
     double capacitance, capCurrent;
     double compResistance, capvoltdiff;
     
-    // Reverse recovery tracking
+    // Reverse recovery tracking and stored charge
     double storedCharge = 0; // stored charge in the intrinsic region
     double lastCurrent = 0; // current from previous timestep
     boolean wasForwardBiased = false;
@@ -55,7 +68,6 @@ class PINDiodeElm extends DiodeElm {
         try {
             carrierLifetime = new Double(st.nextToken()).doubleValue();
             intrinsicWidth = new Double(st.nextToken()).doubleValue();
-            junctionCapacitance = new Double(st.nextToken()).doubleValue();
             reverseRecoveryTime = new Double(st.nextToken()).doubleValue();
             capvoltdiff = new Double(st.nextToken()).doubleValue();
         } catch (Exception e) {
@@ -67,7 +79,7 @@ class PINDiodeElm extends DiodeElm {
     
     String dump() {
         return super.dump() + " " + carrierLifetime + " " + intrinsicWidth + " " + 
-               junctionCapacitance + " " + reverseRecoveryTime + " " + capvoltdiff;
+               reverseRecoveryTime + " " + capvoltdiff;
     }
     
     void reset() {
@@ -135,35 +147,43 @@ class PINDiodeElm extends DiodeElm {
         arr[3] = "P = " + getUnitText(getPower(), "W");
         arr[4] = "Carrier lifetime = " + getUnitText(carrierLifetime, "s");
         arr[5] = "Intrinsic width = " + getUnitText(intrinsicWidth, "m");
-        arr[6] = "Junction capacitance = " + getUnitText(junctionCapacitance, "F");
+        arr[6] = "Capacitance = " + getUnitText(capacitance, "F");
         arr[7] = "Reverse recovery time = " + getUnitText(reverseRecoveryTime, "s");
         // Calculate and display RF resistance at current bias
         // Only show if reasonable value (filtering out very large resistances for clarity)
         double rfResistance = calculateRFResistance();
         if (rfResistance > 0 && rfResistance < MAX_DISPLAYABLE_RF_RESISTANCE)
             arr[8] = "RF resistance ≈ " + getUnitText(rfResistance, Locale.ohmString);
-        // Show stored charge during reverse recovery
+        // Show stored charge during forward bias and reverse recovery
         if (Math.abs(storedCharge) > MIN_STORED_CHARGE)
             arr[9] = "Stored charge = " + getUnitText(Math.abs(storedCharge), "C");
     }
     
     // Calculate RF resistance based on DC bias current
-    // RF resistance is inversely proportional to DC current
-    // At high frequencies, the stored charge in the intrinsic region
-    // doesn't have time to be swept out, making it act like a resistor
+    // PIN diode acts as current-controlled resistor at RF frequencies
+    // Physical model: R_RF ≈ W² / (q * μ * τ * I_DC)
+    // where W = intrinsic width, q = electron charge, μ = mobility, τ = carrier lifetime
+    // 
+    // Simplified: R_RF ∝ (W² / τ) / I_DC
+    // This captures the key physics: resistance inversely proportional to stored charge (τ*I_DC)
+    // and directly proportional to transit distance squared (W²)
     double calculateRFResistance() {
         double dcCurrent = Math.abs(getCurrent());
         if (dcCurrent < 1e-12)
             return MAX_DISPLAYABLE_RF_RESISTANCE; // very high resistance at near-zero current
         
-        // Simplified model: R_RF ≈ k / I_DC
-        // This is a practical approximation of the full model R_RF ≈ (k*T/q) * (τ/(W*I_DC))
-        // where k*T/q is thermal voltage, τ is carrier lifetime, W is width
-        // The thermal voltage (≈26mV at room temp) and other constants are absorbed
-        // into the scaling factor for simplicity, giving practical resistance values
-        // when typical parameters (microseconds, micrometers) are used
-        double k = carrierLifetime * intrinsicWidth * 1e6; // empirical scaling for practical ohm values
-        return k / dcCurrent;
+        // Physics-based formula: R_RF ∝ W² / (τ * I_DC)
+        // The constant factor includes q*μ and unit conversions
+        // For silicon: μ_n ≈ 1350 cm²/V·s, μ_p ≈ 450 cm²/V·s, average ≈ 900 cm²/V·s = 0.09 m²/V·s
+        // q = 1.6e-19 C
+        // Combined constant ≈ 1 / (q * μ) ≈ 1 / (1.6e-19 * 0.09) ≈ 7e16
+        double widthSquared = intrinsicWidth * intrinsicWidth;
+        double storedChargeCapacity = carrierLifetime * dcCurrent;
+        
+        // R_RF = k * W² / (τ * I_DC) where k includes physical constants
+        // Using practical scaling that gives reasonable values
+        double k = 7e10; // Empirical factor for practical ohm values
+        return k * widthSquared / storedChargeCapacity;
     }
     
     public EditInfo getEditInfo(int n) {
@@ -174,11 +194,9 @@ class PINDiodeElm extends DiodeElm {
         if (n == 2)
             return new EditInfo("Intrinsic Width (m)", intrinsicWidth, 0, 0);
         if (n == 3)
-            return new EditInfo("Junction Capacitance (F)", junctionCapacitance, 0, 0);
-        if (n == 4)
             return new EditInfo("Reverse Recovery Time (s)", reverseRecoveryTime, 0, 0);
-        // n >= 5: map to super's n >= 1 (buttons)
-        return super.getEditInfo(n - 4);
+        // n >= 4: map to super's n >= 1 (buttons)
+        return super.getEditInfo(n - 3);
     }
     
     public void setEditValue(int n, EditInfo ei) {
@@ -198,16 +216,11 @@ class PINDiodeElm extends DiodeElm {
         }
         if (n == 3) {
             if (ei.value > 0)
-                junctionCapacitance = ei.value;
-            return;
-        }
-        if (n == 4) {
-            if (ei.value > 0)
                 reverseRecoveryTime = ei.value;
             return;
         }
-        // n >= 5: map to super's n >= 1 (buttons)
-        super.setEditValue(n - 4, ei);
+        // n >= 4: map to super's n >= 1 (buttons)
+        super.setEditValue(n - 3, ei);
     }
     
     int getShortcut() { return 0; }
@@ -229,24 +242,27 @@ class PINDiodeElm extends DiodeElm {
     
     void startIteration() {
         super.startIteration();
-        // Calculate voltage-dependent capacitance
-        // PIN diode has lower capacitance when reverse-biased (depletion region widens)
-        // and higher capacitance when forward-biased (charge storage)
+        // Calculate capacitance based on bias state
         double voltdiff = volts[0] - volts[1];
         
         if (voltdiff < 0) {
-            // Reverse bias: use junction capacitance (lower value)
-            capacitance = junctionCapacitance;
+            // Reverse bias: Geometry-based capacitance (stable, voltage-independent)
+            // C = ε₀ * ε_r * A / W
+            // This is the key characteristic of PIN diodes - stable reverse capacitance
+            capacitance = EPSILON_0 * EPSILON_R_SI * ASSUMED_AREA / intrinsicWidth;
         } else {
-            // Forward bias: add diffusion capacitance due to stored charge
-            // Diffusion capacitance is proportional to carrier lifetime and current
-            double diffusionCap = carrierLifetime * Math.abs(getCurrent()) / THERMAL_VOLTAGE_AT_300K;
-            capacitance = junctionCapacitance + diffusionCap;
+            // Forward bias: Geometry capacitance + diffusion capacitance from stored charge
+            // Diffusion capacitance: C_diff = τ * g_m = τ * (dI/dV) ≈ τ * I / (2*V_T)
+            // Factor of 2 accounts for PIN diode charge storage being different from PN junction
+            double geomCapacitance = EPSILON_0 * EPSILON_R_SI * ASSUMED_AREA / intrinsicWidth;
+            double diffusionCap = carrierLifetime * Math.abs(getCurrent()) / (2 * THERMAL_VOLTAGE_AT_300K);
+            capacitance = geomCapacitance + diffusionCap;
         }
         
-        // Limit capacitance to reasonable values
-        if (capacitance < junctionCapacitance)
-            capacitance = junctionCapacitance;
+        // Limit capacitance to reasonable values for numerical stability
+        double minCap = EPSILON_0 * EPSILON_R_SI * ASSUMED_AREA / intrinsicWidth;
+        if (capacitance < minCap)
+            capacitance = minCap;
         if (capacitance > MAX_CAPACITANCE)
             capacitance = MAX_CAPACITANCE;
         
@@ -261,22 +277,37 @@ class PINDiodeElm extends DiodeElm {
         sim.stampResistor(nodes[2], nodes[1], compResistance);
         sim.updateVoltageSource(nodes[0], nodes[2], voltSource, voltSourceValue);
         
-        // Track charge storage for reverse recovery
+        // Track charge storage with proper recombination dynamics
         double currentCurrent = getCurrent();
         double voltdiff = volts[0] - volts[1];
         
         if (currentCurrent > 0 && voltdiff > 0) {
-            // Forward biased: accumulate charge in intrinsic region
-            storedCharge += currentCurrent * sim.timeStep;
+            // Forward biased: charge accumulates but also recombines
+            // dQ/dt = I - Q/τ (charge injection minus recombination)
+            double injectionRate = currentCurrent;
+            double recombinationRate = storedCharge / carrierLifetime;
+            storedCharge += (injectionRate - recombinationRate) * sim.timeStep;
+            
+            // Ensure stored charge doesn't go negative
+            if (storedCharge < 0)
+                storedCharge = 0;
+                
             wasForwardBiased = true;
         } else if (wasForwardBiased && voltdiff < 0) {
             // Reverse bias after forward bias: simulate reverse recovery
-            // Charge takes time to be swept out
+            // Charge sweeps out with time constant = reverseRecoveryTime
             double chargeDecayRate = 1.0 / reverseRecoveryTime;
             storedCharge -= storedCharge * chargeDecayRate * sim.timeStep;
             if (Math.abs(storedCharge) < MIN_STORED_CHARGE) {
                 storedCharge = 0;
                 wasForwardBiased = false;
+            }
+        } else if (voltdiff >= 0 && currentCurrent <= 0) {
+            // Forward biased but no forward current: charge recombines naturally
+            double recombinationRate = storedCharge / carrierLifetime;
+            storedCharge -= recombinationRate * sim.timeStep;
+            if (storedCharge < MIN_STORED_CHARGE) {
+                storedCharge = 0;
             }
         }
         
