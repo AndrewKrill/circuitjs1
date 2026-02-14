@@ -19,6 +19,7 @@
 
 package com.lushprojects.circuitjs1.client;
 
+import com.google.gwt.i18n.client.NumberFormat;
 import com.lushprojects.circuitjs1.client.util.Locale;
 
 // PIN diode implementation
@@ -172,7 +173,7 @@ class PINDiodeElm extends DiodeElm {
         // Calculate reverse recovery time from carrier lifetime
         double reverseRecoveryTime = reverseRecoveryFactor * carrierLifetime;
         arr[8] = "Reverse recovery time = " + getUnitText(reverseRecoveryTime, "s") + 
-                 " (" + String.format("%.1f", reverseRecoveryFactor) + "×τ)";
+                 " (" + NumberFormat.getFormat("#.#").format(reverseRecoveryFactor) + "×τ)";
         // Calculate and display RF resistance at current bias
         // Only show if reasonable value (filtering out very large resistances for clarity)
         double rfResistance = calculateRFResistance();
