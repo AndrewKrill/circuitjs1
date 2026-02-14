@@ -175,10 +175,8 @@ class PINDiodeElm extends DiodeElm {
         arr[8] = "Reverse recovery time = " + getUnitText(reverseRecoveryTime, "s") + 
                  " (" + NumberFormat.getFormat("#.#").format(reverseRecoveryFactor) + "×τ)";
         // Calculate and display RF resistance at current bias
-        // Only show if reasonable value (filtering out very large resistances for clarity)
         double rfResistance = calculateRFResistance();
-        if (rfResistance > 0 && rfResistance < MAX_DISPLAYABLE_RF_RESISTANCE)
-            arr[9] = "RF resistance ≈ " + getUnitText(rfResistance, Locale.ohmString);
+        arr[9] = "RF resistance ≈ " + getUnitText(rfResistance, Locale.ohmString);
         // Show stored charge during forward bias and reverse recovery
         if (Math.abs(storedCharge) > MIN_STORED_CHARGE)
             arr[10] = "Stored charge = " + getUnitText(Math.abs(storedCharge), "C");
